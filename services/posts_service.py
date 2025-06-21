@@ -1,5 +1,6 @@
 import uuid, imghdr, io
 from datetime import datetime
+from services.image_service import preprocess
 from firebase_admin import storage, firestore
 from config import db             
 ALLOWED_TYPES = {"jpeg", "png"}
@@ -7,18 +8,24 @@ ALLOWED_TYPES = {"jpeg", "png"}
 class PostService:
     @staticmethod
     def _upload_image(file_storage, uid: str) -> str:
+        """Preprocesses and uploads an image, returning the public URL."""
         raw = file_storage.read()
-        img_type = imghdr.what(None, raw)
-        if img_type not in ALLOWED_TYPES:
-            raise ValueError("Only JPEG and PNG are allowed")
 
-        ext = "jpg" if img_type == "jpeg" else "png"
-        filename = f"posts/{uid}/{uuid.uuid4()}.{ext}"
+        try:
+            clean_bytes, img_type = preprocess(raw)
+        except ValueError as ve:
+            # user-facing validation failure
+            raise
+        except Exception:
+            raise ValueError("Image processing failed")
 
-        bucket = storage.bucket()
-        blob = bucket.blob(filename)
-        blob.upload_from_file(io.BytesIO(raw), content_type=f"image/{ext}")
-        blob.make_public()                    # simple for now
+        ext  = "jpg"  # preprocess always returns jpeg now
+        name = f"posts/{uid}/{uuid.uuid4()}.{ext}"
+
+        blob = storage.bucket().blob(name)
+        blob.upload_from_file(io.BytesIO(clean_bytes),
+                              content_type="image/jpeg")
+        blob.make_public()
         return blob.public_url
 
     @classmethod
