@@ -25,9 +25,21 @@ class AuthService:
             return False, "Invalid phone format"
         if photo_url and not photo_url.startswith(BUCKET_URL_PREFIX):
             return False, "photo_url must come from the project bucket"
-        docs = db.collection("users").where("phone", "==", phone).limit(1).stream()
-        if any(docs):
+        
+            # ⬇ NEW: email uniqueness check
+        if any(db.collection("users")
+           .where("email", "==", email)
+           .limit(1)
+           .stream()):
+            return False, "Email already in use"
+
+    # existing phone-uniqueness check
+        if any(db.collection("users")
+           .where("phone", "==", phone)
+           .limit(1)
+           .stream()):
             return False, "Phone already in use"
+
         return True, None
 
     # ---------------------------- create -----------------------------

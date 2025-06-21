@@ -2,6 +2,8 @@ from flask import Blueprint, request, jsonify
 import requests
 from services.auth_service import AuthService
 from controllers.auth_decorators import auth_required
+from services.posts_service import PostService
+
 
 
 auth_bp = Blueprint("auth", __name__)
@@ -75,3 +77,4 @@ def get_me():
         return jsonify(profile), 200
     except Exception as e:
         return jsonify(error=str(e)), 500
+    
