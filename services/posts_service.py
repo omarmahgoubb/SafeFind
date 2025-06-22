@@ -42,3 +42,32 @@ class PostService:
         ref = db.collection("posts").document()
         ref.set(doc)
         return ref.id, image_url
+
+    @classmethod
+    def update_post(cls, post_id: str, uid: str, update_fields: dict):
+        ref = db.collection("posts").document(post_id)
+        doc = ref.get()
+        if not doc.exists or doc.to_dict().get("uid") != uid:
+            raise ValueError("Post not found or unauthorized")
+        ref.update(update_fields)
+
+    @classmethod
+    def delete_post(cls, post_id: str, uid: str):
+        ref = db.collection("posts").document(post_id)
+        doc = ref.get()
+        if not doc.exists or doc.to_dict().get("uid") != uid:
+            raise ValueError("Post not found or unauthorized")
+        ref.delete()
+
+    @classmethod
+    def get_posts(cls, uid: str):
+        posts = db.collection("posts").where("uid", "==", uid).order_by("created_at", direction=firestore.Query.DESCENDING).stream()
+        return [{**doc.to_dict(), "id": doc.id} for doc in posts]
+
+    @classmethod
+    def get_post(cls, post_id: str, uid: str):
+        ref = db.collection("posts").document(post_id)
+        doc = ref.get()
+        if not doc.exists or doc.to_dict().get("uid") != uid:
+            return None
+        return {**doc.to_dict(), "id": doc.id}

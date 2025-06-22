@@ -38,3 +38,80 @@ def create_post():
         return jsonify(error=str(ve)), 400
     except Exception as e:
         return jsonify(error=str(e)), 500
+
+@posts_bp.route("/posts/<post_id>", methods=["PATCH"])
+@auth_required
+def update_post(post_id):
+    form = request.form.to_dict()
+    update_fields = {}
+    for fld in ("missing_name", "missing_age", "last_seen", "notes"):
+        if fld in form:
+            update_fields[fld] = form[fld]
+    if "missing_age" in update_fields:
+        try:
+            update_fields["missing_age"] = int(update_fields["missing_age"])
+        except ValueError:
+            return jsonify(error="missing_age must be an integer"), 400
+
+    image_url = None
+    if "image_file" in request.files:
+        try:
+            image_url = PostService._upload_image(request.files["image_file"], request.uid)
+            update_fields["image_url"] = image_url
+        except Exception as e:
+            return jsonify(error=str(e)), 400
+
+    try:
+        PostService.update_post(post_id, request.uid, update_fields)
+        response = {"message": "Post updated"}
+        if image_url is not None:              # file was supplied & passed validation
+            response["image_url"] = image_url
+        return jsonify(response), 200
+    except ValueError as ve:
+        return jsonify(error=str(ve)), 400
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+
+@posts_bp.route("/posts/<post_id>", methods=["DELETE"])
+@auth_required
+def delete_post(post_id):
+    try:
+        PostService.delete_post(post_id, request.uid)
+        return jsonify(message="Post deleted"), 200
+    except ValueError as ve:
+        return jsonify(error=str(ve)), 400
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+
+@posts_bp.route("/posts", methods=["GET"])
+@auth_required
+def get_posts():
+    try:
+        posts = PostService.get_posts(request.uid)
+        allowed_fields = [
+            "author_name", "created_at", "image_url", "status",
+            "notes", "missing_name", "missing_age", "last_seen", "id"
+        ]
+        filtered_posts = [
+            {k: post.get(k) for k in allowed_fields if k in post}
+            for post in posts
+        ]
+        return jsonify(posts=filtered_posts), 200
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+
+@posts_bp.route("/posts/<post_id>", methods=["GET"])
+@auth_required
+def get_post(post_id):
+    try:
+        post = PostService.get_post(post_id, request.uid)
+        if not post:
+            return jsonify(error="Post not found"), 404
+        allowed_fields = [
+            "author_name", "created_at", "image_url", "status",
+            "notes", "missing_name", "missing_age", "last_seen", "id"
+        ]
+        filtered_post = {k: post.get(k) for k in allowed_fields if k in post}
+        return jsonify(post=filtered_post), 200
+    except Exception as e:
+        return jsonify(error=str(e)), 500
