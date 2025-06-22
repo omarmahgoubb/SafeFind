@@ -2,6 +2,8 @@ from flask import Blueprint, request, jsonify
 from controllers.auth_decorators import auth_required   # already exists :contentReference[oaicite:4]{index=4}
 from services.auth_service import AuthService           # for user profile :contentReference[oaicite:5]{index=5}
 from services.posts_service import PostService
+from firebase_admin import firestore
+from config import db
 
 posts_bp = Blueprint("posts", __name__)
 
@@ -113,3 +115,14 @@ def get_post(post_id):
         return jsonify(post=filtered_post), 200
     except Exception as e:
         return jsonify(error=str(e)), 500
+
+@posts_bp.route("/posts/<post_id>/report", methods=["POST"])
+@auth_required
+def report_post(post_id):
+    reason = (request.get_json() or {}).get("reason", "")
+    db.collection("post_reports").document(post_id).set({
+        "reporter": request.uid,
+        "reason": reason[:200],
+        "created_at": firestore.SERVER_TIMESTAMP,
+    })
+    return jsonify(message="reported"), 201

@@ -52,12 +52,30 @@ class PostService:
         ref.update(update_fields)
 
     @classmethod
-    def delete_post(cls, post_id: str, uid: str):
-        ref = db.collection("posts").document(post_id)
-        doc = ref.get()
-        if not doc.exists or doc.to_dict().get("uid") != uid:
-            raise ValueError("Post not found or unauthorized")
-        ref.delete()
+    def delete_post(cls, post_id: str, owner_uid: str, *, as_admin=False):
+        doc_ref = db.collection("posts").document(post_id)
+        doc = doc_ref.get()
+        if not doc.exists:
+            raise ValueError("Post not found")
+
+        # forbid non-admins from deleting posts they don’t own
+        if not as_admin and doc.get("uid") != owner_uid:
+            raise ValueError("Forbidden")
+
+        # delete image in Cloud Storage if present
+        image_url = doc.get("image_url")
+        if image_url:
+            bucket = storage.bucket()
+            # blob path is the part after ".../o/" and before the query string
+            blob_name = image_url.split("/o/")[-1].split("?")[0]
+            blob_name = blob_name.replace("%2F", "/")     # url-decode slashes
+            bucket.blob(blob_name).delete()
+
+        # delete the Firestore post document
+        doc_ref.delete()
+
+        # optional: also remove any report doc
+        db.collection("post_reports").document(post_id).delete()
 
     @classmethod
     def get_posts(cls):
