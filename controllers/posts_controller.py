@@ -84,10 +84,9 @@ def delete_post(post_id):
         return jsonify(error=str(e)), 500
 
 @posts_bp.route("/posts", methods=["GET"])
-@auth_required
 def get_posts():
     try:
-        posts = PostService.get_posts(request.uid)
+        posts = PostService.get_posts()  # No uid
         allowed_fields = [
             "author_name", "created_at", "image_url", "status",
             "notes", "missing_name", "missing_age", "last_seen", "id"
@@ -101,10 +100,9 @@ def get_posts():
         return jsonify(error=str(e)), 500
 
 @posts_bp.route("/posts/<post_id>", methods=["GET"])
-@auth_required
 def get_post(post_id):
     try:
-        post = PostService.get_post(post_id, request.uid)
+        post = PostService.get_post(post_id)  # No uid
         if not post:
             return jsonify(error="Post not found"), 404
         allowed_fields = [

@@ -60,14 +60,14 @@ class PostService:
         ref.delete()
 
     @classmethod
-    def get_posts(cls, uid: str):
-        posts = db.collection("posts").where("uid", "==", uid).order_by("created_at", direction=firestore.Query.DESCENDING).stream()
+    def get_posts(cls):
+        posts = db.collection("posts").order_by("created_at", direction=firestore.Query.DESCENDING).stream()
         return [{**doc.to_dict(), "id": doc.id} for doc in posts]
 
     @classmethod
-    def get_post(cls, post_id: str, uid: str):
+    def get_post(cls, post_id: str):
         ref = db.collection("posts").document(post_id)
         doc = ref.get()
-        if not doc.exists or doc.to_dict().get("uid") != uid:
+        if not doc.exists:
             return None
         return {**doc.to_dict(), "id": doc.id}

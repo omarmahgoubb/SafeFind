@@ -3,12 +3,15 @@ import requests
 from datetime import datetime
 from firebase_admin import auth as fb_auth, firestore
 from config import db, FIREBASE_API_KEY
+from firebase_admin import get_app
+
 
 EMAIL_REGEX = re.compile(r"^[^@]+@[^@]+\.[^@]+$")
 PHONE_REGEX = re.compile(r"^\+?\d{10,15}$")
 
 BUCKET_URL_PREFIX = (
-    "https://firebasestorage.googleapis.com/v0/b/safefind-e93cf.firebasestorage.app"
+    "https://firebasestorage.googleapis.com/v0/b/"
+    + get_app().options.get("storageBucket")      
 )
 
 class AuthService:
