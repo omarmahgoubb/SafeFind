@@ -36,6 +36,9 @@ class AdminService:
     # 2.4 delete a post + cascading cleanup --------
     @staticmethod
     def delete_post(post_id: str):
-        # remove Firestore doc, image file, and reports
-        PostService.delete_post(post_id, as_admin=True)
+        # Use the new admin deletion method from PostService
+        PostService.delete_post_for_admin(post_id)
+
+        # clean up any report doc
         db.collection("post_reports").document(post_id).delete()
+

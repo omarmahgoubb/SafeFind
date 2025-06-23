@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
-from controllers.auth_decorators import auth_required   # already exists :contentReference[oaicite:4]{index=4}
-from services.auth_service import AuthService           # for user profile :contentReference[oaicite:5]{index=5}
+from controllers.auth_decorators import auth_required, admin_required   # already exists
+from services.auth_service import AuthService           # for user profile
 from services.posts_service import PostService
 from firebase_admin import firestore
 from config import db
@@ -19,7 +19,7 @@ def create_post():
         if not form.get(fld):
             return jsonify(error=f"{fld} is required"), 400
 
-    # pull signed-in user’s name
+    # pull signed-in user's name
     profile = AuthService.get_user_profile(request.uid)
     author = f"{profile.get('first_name','')} {profile.get('last_name','')}".strip()
 
@@ -77,9 +77,22 @@ def update_post(post_id):
 @posts_bp.route("/posts/<post_id>", methods=["DELETE"])
 @auth_required
 def delete_post(post_id):
+    """Delete post endpoint for regular users - can only delete their own posts"""
     try:
-        PostService.delete_post(post_id, request.uid)
+        PostService.delete_post_for_user(post_id, request.uid)
         return jsonify(message="Post deleted"), 200
+    except ValueError as ve:
+        return jsonify(error=str(ve)), 400
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+
+@posts_bp.route("/admin/posts/<post_id>", methods=["DELETE"])
+@admin_required
+def admin_delete_post(post_id):
+    """Delete post endpoint for admins - can delete any post"""
+    try:
+        PostService.delete_post_for_admin(post_id)
+        return jsonify(message="Post deleted by admin"), 200
     except ValueError as ve:
         return jsonify(error=str(ve)), 400
     except Exception as e:
@@ -126,3 +139,4 @@ def report_post(post_id):
         "created_at": firestore.SERVER_TIMESTAMP,
     })
     return jsonify(message="reported"), 201
+
