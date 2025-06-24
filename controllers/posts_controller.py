@@ -1,41 +1,78 @@
+# controllers/posts_controller.py
 from flask import Blueprint, request, jsonify
-from controllers.auth_decorators import auth_required, admin_required   # already exists
-from services.auth_service import AuthService           # for user profile
-from services.posts_service import PostService
 from firebase_admin import firestore
+from controllers.auth_decorators import auth_required, admin_required
+from services.auth_service import AuthService
+from services.posts_service import PostService
 from config import db
+from services.face_recognition_service import FaceRecognitionService
+import requests
+
+face_service = FaceRecognitionService() 
 
 posts_bp = Blueprint("posts", __name__)
 
-@posts_bp.route("/posts", methods=["POST"])
+# ───────── create missing-person post ─────────────────────────
+@posts_bp.route("/posts/missing", methods=["POST"])
 @auth_required
-def create_post():
+def create_missing_post():
     if "image_file" not in request.files:
         return jsonify(error="image_file is required"), 400
-
-    # basic form validation
     form = request.form.to_dict()
     for fld in ("missing_name", "missing_age", "last_seen"):
         if not form.get(fld):
             return jsonify(error=f"{fld} is required"), 400
 
-    # pull signed-in user's name
     profile = AuthService.get_user_profile(request.uid)
-    author = f"{profile.get('first_name','')} {profile.get('last_name','')}".strip()
+    author  = f"{profile.get('first_name','')} {profile.get('last_name','')}".strip()
 
     try:
-        post_id, url = PostService.create_post(
+        post_id, url = PostService.create_missing_post(
             request.uid,
             author,
             {
-              "missing_name": form["missing_name"],
-              "missing_age": int(form["missing_age"]),
-              "last_seen": form["last_seen"],
-              "notes": form.get("notes", "")
+                "missing_name": form["missing_name"],
+                "missing_age":  int(form["missing_age"]),
+                "last_seen":    form["last_seen"],
+                "notes":        form.get("notes", ""),
             },
             request.files["image_file"],
         )
-        return jsonify(message="Post created", post_id=post_id, image_url=url), 201
+        return jsonify(message="Missing-person post created",
+                       post_id=post_id, image_url=url), 201
+    except ValueError as ve:
+        return jsonify(error=str(ve)), 400
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+
+# ───────── create found-person post ───────────────────────────
+@posts_bp.route("/posts/found", methods=["POST"])
+@auth_required
+def create_found_post():
+    if "image_file" not in request.files:
+        return jsonify(error="image_file is required"), 400
+    form = request.form.to_dict()
+    for fld in ("found_name", "estimated_age", "found_location"):
+        if not form.get(fld):
+            return jsonify(error=f"{fld} is required"), 400
+
+    profile = AuthService.get_user_profile(request.uid)
+    author  = f"{profile.get('first_name','')} {profile.get('last_name','')}".strip()
+
+    try:
+        post_id, url = PostService.create_found_post(
+            request.uid,
+            author,
+            {
+                "found_name":     form["found_name"],
+                "estimated_age":  int(form["estimated_age"]),
+                "found_location": form["found_location"],
+                "notes":          form.get("notes", ""),
+            },
+            request.files["image_file"],
+        )
+        return jsonify(message="Found-person post created",
+                       post_id=post_id, image_url=url), 201
     except ValueError as ve:
         return jsonify(error=str(ve)), 400
     except Exception as e:
@@ -57,8 +94,14 @@ def update_post(post_id):
 
     image_url = None
     if "image_file" in request.files:
+        # find the post_type to choose the correct folder
+        doc = db.collection("posts").document(post_id).get()
+        post_type = doc.get("post_type", "missing") if doc.exists else "missing"
+
         try:
-            image_url = PostService._upload_image(request.files["image_file"], request.uid)
+            image_url = PostService._upload_image(
+                request.files["image_file"], request.uid, post_type
+            )
             update_fields["image_url"] = image_url
         except Exception as e:
             return jsonify(error=str(e)), 400
@@ -66,7 +109,7 @@ def update_post(post_id):
     try:
         PostService.update_post(post_id, request.uid, update_fields)
         response = {"message": "Post updated"}
-        if image_url is not None:              # file was supplied & passed validation
+        if image_url is not None:              
             response["image_url"] = image_url
         return jsonify(response), 200
     except ValueError as ve:
@@ -139,4 +182,60 @@ def report_post(post_id):
         "created_at": firestore.SERVER_TIMESTAMP,
     })
     return jsonify(message="reported"), 201
+@posts_bp.route("/search", methods=["POST"])
+@auth_required
+def search_for_missing():
+    """
+    Upload a query photo and compare it against all *missing-person* posts.
+    Returns a list of matches sorted by ascending distance.
+    """
+    if "image_file" not in request.files:
+        return jsonify(error="image_file is required"), 400
 
+    search_image_bytes = request.files["image_file"].read()
+
+    try:
+        # 1) pull every post doc (already sorted newest→oldest)
+        all_posts = PostService.get_posts()
+        matches   = []
+
+        for post in all_posts:
+            # skip posts that are NOT 'missing'
+            if post.get("post_type") != "missing":
+                continue
+
+            img_url = post.get("image_url")
+            if not img_url:
+                continue
+
+            try:
+                resp = requests.get(img_url, timeout=5)
+                resp.raise_for_status()
+                post_image_bytes = resp.content
+            except Exception as e:
+                # network error or bad URL – skip this post
+                print(f"[search] skip {post.get('id')}: {e}")
+                continue
+
+            # 2) compare query image to post image
+            distance = face_service.compare_faces(search_image_bytes, post_image_bytes)
+
+            # 3) keep only strong matches (threshold may need tuning)
+            if distance < 0.4:
+                matches.append(
+                    {
+                        "post_id":       post.get("id"),
+                        "distance":      float(distance),
+                        "post_details":  post,
+                    }
+                )
+
+        # sort by similarity (smallest distance first)
+        sorted_matches = sorted(matches, key=lambda x: x["distance"])
+
+        return jsonify(matches=sorted_matches), 200
+
+    except ValueError as ve:
+        return jsonify(error=str(ve)), 400
+    except Exception as e:
+        return jsonify(error=str(e)), 500

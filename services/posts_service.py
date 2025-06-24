@@ -1,67 +1,92 @@
+# services/posts_service.py
 import uuid, io
 from urllib.parse import urlparse, unquote
 
-from services.image_service import preprocess
+import numpy as np
 from firebase_admin import storage, firestore
+from google.cloud.exceptions import NotFound
 from config import db
+from services.image_service import preprocess
 
 
 class PostService:
-    # ────────────────── helpers ──────────────────────────
+    # ───────── private helpers ──────────────────────────
     @staticmethod
-    def _delete_blob_from_url(download_url: str) -> None:
-        parsed = urlparse(download_url)
+    def _gcs_delete(download_url: str) -> None:
+        """Delete a blob given any Firebase or public download URL."""
         bucket = storage.bucket()
-
         blob_name = None
 
-        if "/o/" in parsed.path:                          # both v0 and v1 API forms
-            blob_part = parsed.path.split("/o/")[1]       # posts%2Fpic.jpg
-            blob_name = unquote(blob_part)
-        else:
-            # public URL → /<bucket>/posts/pic.jpg
-            parts = parsed.path.lstrip("/").split("/", 1)  # ["<bucket>", "posts/pic.jpg"]
-            if len(parts) == 2 and parts[0] == bucket.name:
-                blob_name = parts[1]
+        p = urlparse(download_url)
+        if "/o/" in p.path:                             # v0 / v1 signed URL
+            blob_name = unquote(p.path.split("/o/")[1])
+        else:                                           # public URL
+            path = p.path.lstrip("/")
+            if path.startswith(bucket.name + "/"):
+                blob_name = path[len(bucket.name) + 1:]
 
-        if not blob_name:
-            # Unrecognised format; nothing to delete
-            return
+        if blob_name:
+            try:
+                bucket.blob(blob_name).delete()
+            except NotFound:
+                pass  # already gone
 
-        try:
-            bucket.blob(blob_name).delete()
-        except Exception:
-            # object already gone – ignore
-            pass
-    # ────────────────── image upload ─────────────────────
     @staticmethod
-    def _upload_image(file_storage, uid: str) -> str:
-        raw = file_storage.read()
-        clean_bytes, _ = preprocess(raw)          # returns jpeg
-        name = f"posts/{uid}/{uuid.uuid4()}.jpg"
+    def _upload_image(file_storage, uid: str, post_type: str) -> str:
+        """
+        Uploads an image and makes it public.
 
-        blob = storage.bucket().blob(name)
+        • missing posts  →  gs://bucket/missing_posts/<uid>/<uuid>.jpg
+        • found   posts  →  gs://bucket/found_posts/<uuid>.jpg
+        """
+        raw = file_storage.read()
+        clean_bytes, _ = preprocess(raw)
+
+        if post_type == "missing":
+            blob_path = f"missing_posts/{uid}/{uuid.uuid4()}.jpg"
+        else:  # "found"
+            blob_path = f"found_posts/{uuid.uuid4()}.jpg"
+
+        blob = storage.bucket().blob(blob_path)
         blob.upload_from_file(io.BytesIO(clean_bytes),
                               content_type="image/jpeg")
         blob.make_public()
         return blob.public_url
 
-    # ────────────────── CRUD methods ─────────────────────
+
     @classmethod
-    def create_post(cls, uid: str, author_name: str, payload: dict, file_storage):
-        image_url = cls._upload_image(file_storage, uid)
+    def _create_post_base(
+        cls,
+        uid: str,
+        author_name: str,
+        payload: dict,
+        file_storage,
+        post_type: str,
+    ):
+        image_url = cls._upload_image(file_storage, uid, post_type)
         doc = {
             "uid": uid,
             "author_name": author_name,
-            **payload,
+            "post_type": post_type,                     # ← NEW FIELD
             "image_url": image_url,
             "created_at": firestore.SERVER_TIMESTAMP,
             "status": "active",
+            **payload,
         }
         ref = db.collection("posts").document()
         ref.set(doc)
         return ref.id, image_url
 
+    # ───────── public creators ─────────────────────────
+    @classmethod
+    def create_missing_post(cls, uid, author, payload, file_storage):
+        return cls._create_post_base(uid, author, payload, file_storage, "missing")
+
+    @classmethod
+    def create_found_post(cls, uid, author, payload, file_storage):
+        return cls._create_post_base(uid, author, payload, file_storage, "found")
+
+    # ───────── updates & deletes ───────────────────────
     @classmethod
     def update_post(cls, post_id: str, uid: str, update_fields: dict):
         ref = db.collection("posts").document(post_id)
@@ -71,36 +96,35 @@ class PostService:
         ref.update(update_fields)
 
     @classmethod
-    def delete_post(cls, post_id: str, owner_uid: str, *, as_admin=False):
+    def delete_post_for_user(cls, post_id: str, uid: str):
+        cls._delete_post_common(post_id, uid, is_admin=False)
+
+    @classmethod
+    def delete_post_for_admin(cls, post_id: str):
+        # admin: we first read owner uid to satisfy signature
+        doc = db.collection("posts").document(post_id).get()
+        if not doc.exists:
+            raise ValueError("Post not found")
+        owner_uid = doc.get("uid", "")
+        cls._delete_post_common(post_id, owner_uid, is_admin=True)
+
+    @classmethod
+    def _delete_post_common(cls, post_id: str, owner_uid: str, is_admin: bool):
         doc_ref = db.collection("posts").document(post_id)
         doc = doc_ref.get()
         if not doc.exists:
             raise ValueError("Post not found")
 
-        # Use to_dict() to access fields
-        if not as_admin and doc.to_dict().get("uid") != owner_uid:
+        if not is_admin and doc.get("uid") != owner_uid:
             raise ValueError("Forbidden")
 
-        # remove the image file, if any
-        image_url = doc.to_dict().get("image_url")
-        if image_url:
-            cls._delete_blob_from_url(image_url)
+        if img_url := doc.get("image_url"):
+            cls._gcs_delete(img_url)
 
-        # delete the Firestore post doc
         doc_ref.delete()
-        # also drop any report entry
         db.collection("post_reports").document(post_id).delete()
 
-    @classmethod
-    def delete_post_for_user(cls, post_id: str, uid: str):
-        cls.delete_post(post_id, uid, as_admin=False)
-
-    @classmethod
-    def delete_post_for_admin(cls, post_id: str):
-        # For admin deletion, we don't need to check owner_uid, so we can pass None or an empty string
-        cls.delete_post(post_id, owner_uid="", as_admin=True)
-
-    # ────────────────── retrieval ────────────────────────
+    # ───────── retrieval ──────────────────────────────
     @classmethod
     def get_posts(cls):
         posts = (
@@ -114,5 +138,3 @@ class PostService:
     def get_post(cls, post_id: str):
         doc = db.collection("posts").document(post_id).get()
         return None if not doc.exists else {**doc.to_dict(), "id": doc.id}
-
-

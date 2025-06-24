@@ -1,2 +1,6 @@
 safefind-e93cf-firebase-adminsdk-fbsvc-9cc89ef13b.json
 config.py
+Lib/
+lib/
+lfw_dataset/lfw-deepfunneled/**
+!lfw_dataset/lfw-deepfunneled/.gitkeep
