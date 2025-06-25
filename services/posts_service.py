@@ -2,7 +2,6 @@
 import uuid, io
 from urllib.parse import urlparse, unquote
 
-import numpy as np
 from firebase_admin import storage, firestore
 from google.cloud.exceptions import NotFound
 from config import db
@@ -102,23 +101,27 @@ class PostService:
     @classmethod
     def delete_post_for_admin(cls, post_id: str):
         # admin: we first read owner uid to satisfy signature
-        doc = db.collection("posts").document(post_id).get()
-        if not doc.exists:
+        snapshot  = db.collection("posts").document(post_id).get()
+        if not snapshot .exists:
             raise ValueError("Post not found")
-        owner_uid = doc.get("uid", "")
+        data = snapshot.to_dict() or {}
+        owner_uid = data.get("uid", "")
         cls._delete_post_common(post_id, owner_uid, is_admin=True)
 
     @classmethod
     def _delete_post_common(cls, post_id: str, owner_uid: str, is_admin: bool):
         doc_ref = db.collection("posts").document(post_id)
-        doc = doc_ref.get()
-        if not doc.exists:
+        snapshot = doc_ref.get()
+        if not snapshot.exists:
             raise ValueError("Post not found")
 
-        if not is_admin and doc.get("uid") != owner_uid:
+        data = snapshot.to_dict() or {}
+
+        if not is_admin and data.get("uid") != owner_uid:
             raise ValueError("Forbidden")
 
-        if img_url := doc.get("image_url"):
+        img_url = data.get("image_url")
+        if img_url:
             cls._gcs_delete(img_url)
 
         doc_ref.delete()

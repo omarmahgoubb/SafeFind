@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
 import tensorflow as tf
-from keras import backend as K
 from keras.layers import Activation, Dense, Dropout, Conv2D, MaxPooling2D, Flatten
 from keras.models import Sequential, Model
 from keras.optimizers import RMSprop
@@ -43,13 +42,13 @@ def build_base_network(input_shape):
 
     return seq
 
-def euclidean_distance(vects):
-    x, y = vects
+def euclidean_distance(vectors):
+    x, y = vectors
     return tf.math.sqrt(tf.math.reduce_sum(tf.math.square(x - y), axis=1, keepdims=True))
 
-def eucl_dist_output_shape(shapes):
+def euclidean_dist_output_shape(shapes):
     shape1, shape2 = shapes
-    return (shape1[0], 1)
+    return shape1[0], 1
 
 def contrastive_loss(y_true, y_pred):
     margin = 1
@@ -71,7 +70,7 @@ def build_siamese_model(input_shape):
     processed_b = base_network(input_b)
 
     # Keras Lambda layer to calculate the Euclidean distance between the two vectors
-    distance = Lambda(euclidean_distance, output_shape=eucl_dist_output_shape)([processed_a, processed_b])
+    distance = Lambda(euclidean_distance, output_shape=euclidean_dist_output_shape)([processed_a, processed_b])
 
     # Define the model
     model = Model(inputs=[input_a, input_b], outputs=distance)
@@ -87,7 +86,8 @@ class FaceRecognitionService:
     def get_model(self):
         return self.model
 
-    def preprocess_image_for_model(self, image_bytes):
+    @staticmethod
+    def preprocess_image_for_model(image_bytes):
         # This is a placeholder. You will need to implement proper image preprocessing
         # to match the input requirements of your Siamese network.
         # This might involve resizing, grayscale conversion, normalization, etc.
@@ -95,8 +95,8 @@ class FaceRecognitionService:
         # You should integrate with the existing image_service.py for actual preprocessing.
         
         # Example: Convert to grayscale and resize to 100x100
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        par = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(par, cv2.IMREAD_COLOR)
         if img is None:
             raise ValueError("Could not decode image bytes.")
         

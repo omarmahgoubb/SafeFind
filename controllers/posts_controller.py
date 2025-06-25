@@ -1,5 +1,5 @@
 # controllers/posts_controller.py
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from firebase_admin import firestore
 from controllers.auth_decorators import auth_required, admin_required
 from services.auth_service import AuthService
@@ -23,12 +23,12 @@ def create_missing_post():
         if not form.get(fld):
             return jsonify(error=f"{fld} is required"), 400
 
-    profile = AuthService.get_user_profile(request.uid)
+    profile = AuthService.get_user_profile(g.uid)
     author  = f"{profile.get('first_name','')} {profile.get('last_name','')}".strip()
 
     try:
         post_id, url = PostService.create_missing_post(
-            request.uid,
+            g.uid,
             author,
             {
                 "missing_name": form["missing_name"],
@@ -56,12 +56,12 @@ def create_found_post():
         if not form.get(fld):
             return jsonify(error=f"{fld} is required"), 400
 
-    profile = AuthService.get_user_profile(request.uid)
+    profile = AuthService.get_user_profile(g.uid)
     author  = f"{profile.get('first_name','')} {profile.get('last_name','')}".strip()
 
     try:
         post_id, url = PostService.create_found_post(
-            request.uid,
+            g.uid,
             author,
             {
                 "found_name":     form["found_name"],
@@ -100,14 +100,14 @@ def update_post(post_id):
 
         try:
             image_url = PostService._upload_image(
-                request.files["image_file"], request.uid, post_type
+                request.files["image_file"], g.uid, post_type
             )
             update_fields["image_url"] = image_url
         except Exception as e:
             return jsonify(error=str(e)), 400
 
     try:
-        PostService.update_post(post_id, request.uid, update_fields)
+        PostService.update_post(post_id, g.uid, update_fields)
         response = {"message": "Post updated"}
         if image_url is not None:              
             response["image_url"] = image_url
@@ -122,7 +122,7 @@ def update_post(post_id):
 def delete_post(post_id):
     """Delete post endpoint for regular users - can only delete their own posts"""
     try:
-        PostService.delete_post_for_user(post_id, request.uid)
+        PostService.delete_post_for_user(post_id, g.uid)
         return jsonify(message="Post deleted"), 200
     except ValueError as ve:
         return jsonify(error=str(ve)), 400
@@ -177,7 +177,7 @@ def get_post(post_id):
 def report_post(post_id):
     reason = (request.get_json() or {}).get("reason", "")
     db.collection("post_reports").document(post_id).set({
-        "reporter": request.uid,
+        "reporter": g.uid,
         "reason": reason[:200],
         "created_at": firestore.SERVER_TIMESTAMP,
     })
@@ -197,7 +197,8 @@ def search_for_missing():
     try:
         # 1) pull every post doc (already sorted newest→oldest)
         all_posts = PostService.get_posts()
-        matches   = []
+        best_match = None
+        best_distance = None
 
         for post in all_posts:
             # skip posts that are NOT 'missing'
@@ -222,18 +223,17 @@ def search_for_missing():
 
             # 3) keep only strong matches (threshold may need tuning)
             if distance < 0.4:
-                matches.append(
-                    {
-                        "post_id":       post.get("id"),
-                        "distance":      float(distance),
-                        "post_details":  post,
+                if best_distance is None or distance < best_distance:
+                    best_distance = distance
+                    best_match = {
+                        "post_id": post.get("id"),
+                        "distance": float(distance),
+                        "post_details": post
                     }
-                )
-
-        # sort by similarity (smallest distance first)
-        sorted_matches = sorted(matches, key=lambda x: x["distance"])
-
-        return jsonify(matches=sorted_matches), 200
+        if best_match:
+            return jsonify(matches=[best_match]), 200
+        else:
+            return jsonify(matches=[]), 200
 
     except ValueError as ve:
         return jsonify(error=str(ve)), 400

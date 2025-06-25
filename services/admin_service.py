@@ -36,9 +36,14 @@ class AdminService:
     # 2.4 delete a post + cascading cleanup --------
     @staticmethod
     def delete_post(post_id: str):
-        # Use the new admin deletion method from PostService
+        doc_ref = db.collection("posts").document(post_id)
+        snapshot = doc_ref.get()
+        if not snapshot.exists:
+            raise ValueError("Post not found")
+
+        data = snapshot.to_dict() or {}
+        data.get("uid", "")
         PostService.delete_post_for_admin(post_id)
 
-        # clean up any report doc
         db.collection("post_reports").document(post_id).delete()
 

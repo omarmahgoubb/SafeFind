@@ -1,5 +1,5 @@
 # controllers/admin_controller.py
-from flask import Blueprint, request, jsonify
+from flask import Blueprint
 from services.admin_service import AdminService
 from controllers.auth_decorators import *
 
@@ -34,5 +34,10 @@ def list_reports():
 @admin_bp.route("/posts/<post_id>", methods=["DELETE"])
 @admin_required
 def delete_post(post_id):
-    AdminService.delete_post(post_id)
-    return jsonify(message="post deleted"), 200
+    try:
+        AdminService.delete_post(post_id)
+        return jsonify(message="Post deleted"), 200
+    except ValueError as ve:
+        return jsonify(error=str(ve)), 404
+    except Exception as e:
+        return jsonify(error="Internal server error"), 500
