@@ -28,4 +28,7 @@ class UserRepository:
     def update_firebase_user(uid: str, **kwargs):
         fb_auth.update_user(uid, **kwargs)
 
-
+    @staticmethod
+    def get_user_count() -> int:
+        snap = db.collection("users").count().get()   # alias optional
+        return snap[0][0].value if snap else 0

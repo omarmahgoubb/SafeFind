@@ -2,6 +2,9 @@
 from flask import Blueprint, request, jsonify
 from services.admin_service import AdminService
 from controllers.auth_decorators import *
+from services.admin_service import AdminService          
+from controllers.auth_decorators import admin_required   
+
 
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -36,3 +39,10 @@ def list_reports():
 def delete_post(post_id):
     AdminService.delete_post(post_id)
     return jsonify(message="post deleted"), 200
+
+# 1.5 get user count  ────────────────────────────
+@admin_bp.route("/users/count", methods=["GET"])
+@admin_required
+def user_count():
+    total = AdminService.get_user_count()
+    return jsonify(total_users=total), 200

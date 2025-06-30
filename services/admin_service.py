@@ -1,6 +1,7 @@
 from firebase_admin import auth as fb_auth, firestore
 from google.cloud.firestore import Query
 from services.posts_service import PostService
+from repositories.user_repository import UserRepository 
 
 db = firestore.client()
 
@@ -42,3 +43,6 @@ class AdminService:
         # clean up any report doc
         db.collection("post_reports").document(post_id).delete()
 
+    @staticmethod
+    def get_user_count() -> int:
+        return UserRepository.get_user_count()
