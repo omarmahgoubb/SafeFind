@@ -125,4 +125,27 @@ class PostService:
         doc = PostRepository.get_post_by_id(post_id)
         return None if not doc.exists else Post.from_dict(doc.id, doc.to_dict())
 
+    @staticmethod
+    def download_image(url: str) -> bytes:
+        """Download image from Firebase Storage URL"""
+        from urllib.parse import urlparse, unquote
+        import requests
+
+        # Parse URL to extract blob path
+        parsed = urlparse(url)
+        if "firebasestorage.googleapis.com" in parsed.netloc:
+            # Extract blob path from Firebase URL
+            path_segments = parsed.path.split("/o/")
+            if len(path_segments) > 1:
+                blob_path = unquote(path_segments[1].split("?")[0])
+
+                # Download from Firebase Storage
+                bucket = storage.bucket()
+                blob = bucket.blob(blob_path)
+                return blob.download_as_bytes()
+
+        # Fallback to regular download
+        response = requests.get(url)
+        response.raise_for_status()
+        return response.content
 
