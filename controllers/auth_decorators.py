@@ -1,8 +1,8 @@
 # auth_decorators.py
 from functools import wraps
-from flask import request, jsonify, g
+from flask import request, jsonify
 from firebase_admin import auth as firebase_auth
-from config import db
+from config import db                         # used only as a fallback
 
 
 def auth_required(fn):
@@ -20,14 +20,14 @@ def auth_required(fn):
             return jsonify(error="Invalid or expired token"), 401
 
         # cache for downstream decorators / views
-        g.uid = claims["uid"]
-        g.role = claims.get("role")      # may be None if no custom claim
+        request.uid  = claims["uid"]
+        request.role = claims.get("role")      # may be None if no custom claim
 
         # optional fallback to Firestore when role claim missing
-        if g.role is None:
-            doc = db.collection("users").document(g.uid).get()
+        if request.role is None:
+            doc = db.collection("users").document(request.uid).get()
             if doc.exists:
-                g.role = doc.to_dict().get("role")
+                request.role = doc.to_dict().get("role")
 
         return fn(*args, **kwargs)
     return wrapper
@@ -38,7 +38,7 @@ def admin_required(fn):
     @wraps(fn)
     @auth_required
     def wrapper(*args, **kwargs):
-        if g.role != "admin":
+        if request.role != "admin":
             return jsonify(error="Forbidden"), 403
         return fn(*args, **kwargs)
     return wrapper

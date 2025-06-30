@@ -1,13 +1,17 @@
 import os
+import pathlib
 import numpy as np
 import cv2
-from services.face_recognition_service import FaceRecognitionService
 from keras.models import load_model
-from services.face_recognition_service import contrastive_loss, euclidean_distance, euclidean_dist_output_shape
+import sys
+# ───────── ensure project root on sys.path ─────────
+ROOT = pathlib.Path(__file__).resolve().parents[2]  # …/GradProject
+sys.path.append(str(ROOT))
+from services.face_recognition_service import contrastive_loss, euclidean_distance, eucl_dist_output_shape
 
 PREPARED_DATA_DIR = r"C:\Users\omara\Desktop\GradProject\data\lfw_prepared"
 PAIRS_FILE = os.path.join(PREPARED_DATA_DIR, "lfw_pairs.txt")
-MODEL_LOAD_PATH = r"C:\Users\omara\Desktop\GradProject\siamese_model.h5"
+MODEL_LOAD_PATH = r"C:\Users\omara\Desktop\GradProject\AiModels\face_recognition\siamese_model.h5"
 
 
 # Image dimensions for the model
@@ -41,7 +45,7 @@ if __name__ == "__main__":
         model = load_model(MODEL_LOAD_PATH, custom_objects={
             'contrastive_loss': contrastive_loss,
             'euclidean_distance': euclidean_distance,
-            'eucl_dist_output_shape': euclidean_dist_output_shape
+            'eucl_dist_output_shape': eucl_dist_output_shape
         })
         print("Model loaded successfully.")
     except Exception as e:

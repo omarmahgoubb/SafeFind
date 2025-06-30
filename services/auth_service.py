@@ -2,17 +2,17 @@ import re
 import requests
 from datetime import datetime
 from firebase_admin import auth as fb_auth, firestore
-from config import db, FIREBASE_API_KEY
+from config import FIREBASE_API_KEY
 from firebase_admin import get_app
+from repositories.user_repository import UserRepository
+from models.user_model import User
+from paths import FIREBASE_STORAGE_BUCKET_URL_PREFIX
 
 
 EMAIL_REGEX = re.compile(r"^[^@]+@[^@]+\.[^@]+$")
 PHONE_REGEX = re.compile(r"^\+?\d{10,15}$")
 
-BUCKET_URL_PREFIX = (
-    "https://firebasestorage.googleapis.com/v0/b/"
-    + get_app().options.get("storageBucket")      
-)
+BUCKET_URL_PREFIX = FIREBASE_STORAGE_BUCKET_URL_PREFIX
 
 class AuthService:
     """Wrapper around Firebase Auth & Firestore with optional avatars."""
@@ -28,12 +28,11 @@ class AuthService:
             return False, "Invalid phone format"
         if photo_url and not photo_url.startswith(BUCKET_URL_PREFIX):
             return False, "photo_url must come from the project bucket"
+        
+        if UserRepository.get_user_by_email(email):
+            return False, "Email already in use"
 
-    # existing phone-uniqueness check
-        if any(db.collection("users")
-           .where("phone", "==", phone)
-           .limit(1)
-           .stream()):
+        if UserRepository.get_user_by_phone(phone):
             return False, "Phone already in use"
 
         return True, None
@@ -42,23 +41,24 @@ class AuthService:
     @staticmethod
     def register_user(email: str, password: str, first_name: str, last_name: str,
                        phone: str, photo_url: str | None = None) -> str:
-        user = fb_auth.create_user(
+        user_record = fb_auth.create_user(
             email=email,
             password=password,
             display_name=f"{first_name} {last_name}",
             photo_url=photo_url or None,
         )
-        profile = {
-            "email": email,
-            "first_name": first_name,
-            "last_name": last_name,
-            "phone": phone,
-            "photo_url": photo_url or "",
-            "role": "user",
-            "created_at": firestore.SERVER_TIMESTAMP,
-        }
-        db.collection("users").document(user.uid).set(profile)
-        return user.uid
+        user_profile = User(
+            uid=user_record.uid,
+            email=email,
+            first_name=first_name,
+            last_name=last_name,
+            phone=phone,
+            photo_url=photo_url or "",
+            role="user",
+            created_at=firestore.SERVER_TIMESTAMP,
+        )
+        UserRepository.create_user_profile(user_record.uid, user_profile.to_dict())
+        return user_record.uid
 
     # ----------------------------- login -----------------------------
     @staticmethod
@@ -69,23 +69,17 @@ class AuthService:
         data = resp.json()
         uid = data["localId"]
 
-        doc = db.collection("users").document(uid).get()
-        role = photo = first = last = ""
-        if doc.exists:
-            d = doc.to_dict()
-            role = d.get("role", "user")
-            photo = d.get("photo_url", "")
-            first = d.get("first_name", "")
-            last = d.get("last_name", "")
+        doc = UserRepository.get_user_profile(uid)
+        user = User.from_dict(uid, doc.to_dict()) if doc.exists else User(uid, email, "", "", "", "", "user", None)
 
         return {
             "uid": uid,
             "idToken": data["idToken"],
             "refreshToken": data["refreshToken"],
-            "role": role or "user",
-            "photo_url": photo,
-            "first_name": first,
-            "last_name": last,
+            "role": user.role,
+            "photo_url": user.photo_url,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
         }
 
     # ----------------------------- update ----------------------------
@@ -94,27 +88,30 @@ class AuthService:
         if "photo_url" in updates and not updates["photo_url"].startswith(BUCKET_URL_PREFIX):
             raise ValueError("photo_url must come from the project bucket")
         if "photo_url" in updates:
-            fb_auth.update_user(uid, photo_url=updates["photo_url"] or None)
+            UserRepository.update_firebase_user(uid, photo_url=updates["photo_url"] or None)
         if updates:
-            db.collection("users").document(uid).update(updates)
+            UserRepository.update_user_profile(uid, updates)
 
     # ------------------------------ read -----------------------------
     @staticmethod
-    def get_user_profile(uid: str) -> dict:
-        doc = db.collection("users").document(uid).get()
-        profile = doc.to_dict() if doc.exists else {}
-        if profile is None:
-            profile = {}
+    def get_user_profile(uid: str) -> User:
+        doc = UserRepository.get_user_profile(uid)
+        if not doc.exists:
+            raise ValueError("User not found")
+        profile_data = doc.to_dict()
         auth_rec = fb_auth.get_user(uid)
-        profile.setdefault("email", auth_rec.email)
-        profile.setdefault("photo_url", auth_rec.photo_url or "")
-        if "first_name" not in profile or "last_name" not in profile:
+        
+        # Ensure all fields are present for User model initialization
+        profile_data.setdefault("email", auth_rec.email)
+        profile_data.setdefault("photo_url", auth_rec.photo_url or "")
+        if "first_name" not in profile_data or "last_name" not in profile_data:
             parts = (auth_rec.display_name or "").split(" ")
-            profile.setdefault("first_name", parts[0] if parts else "")
-            profile.setdefault("last_name", " ".join(parts[1:]))
-        ts = profile.get("created_at")
-        if ts and hasattr(ts, "to_datetime"):
-            profile["created_at"] = ts.to_datetime().isoformat()
-        elif isinstance(ts, datetime):
-            profile["created_at"] = ts.isoformat()
-        return profile
+            profile_data.setdefault("first_name", parts[0] if parts else "")
+            profile_data.setdefault("last_name", " ".join(parts[1:]))
+        profile_data.setdefault("role", "user")
+        profile_data.setdefault("created_at", firestore.SERVER_TIMESTAMP)
+
+        return User.from_dict(uid, profile_data)
+
+
+

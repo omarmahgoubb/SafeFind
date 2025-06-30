@@ -3,7 +3,6 @@ import cv2
 import numpy as np
 import imghdr
 
-#nzbt el preprocessing bta3 el sora
 # ── tunables ─────────────────────────────────────────────────────────
 ALLOWED_TYPES   = {"jpeg", "png"}
 MIN_SIDE        = 320       # px   – reject tiny pictures
