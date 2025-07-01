@@ -1,34 +1,64 @@
-from flask import Blueprint, request, jsonify
+# controllers/aging_controller.py
+import base64
+from flask import Blueprint, request, jsonify, Response
 from services.age_progression_service import AgeProgressionService
-from services.posts_service import PostService
 
 aging_bp = Blueprint("aging", __name__)
 age_service = AgeProgressionService()
 
-
 @aging_bp.route("/age-progress", methods=["POST"])
 def age_progress():
     """
-    Endpoint for age progression
-    Request JSON: { "post_id": "abc123", "target_age": 50 }
-    Response: { "progressed_url": "https://firebase/age_progressed.jpg" }
+    Supports two modes:
+
+      1) multipart/form-data:
+           • key "image": file upload
+           • key "target_age": text
+
+      2) application/json:
+           { "image_b64": "<base64 string>", "target_age": 50 }
     """
-    data = request.get_json()
-    if not data or "post_id" not in data or "target_age" not in data:
-        return jsonify(error="post_id and target_age are required"), 400
+    # 1) multipart/form-data
+    if request.content_type.startswith("multipart/form-data"):
+        if "image" not in request.files or "target_age" not in request.form:
+            return jsonify(error="image file and target_age required"), 400
 
+        file = request.files["image"]
+        try:
+            target_age = int(request.form["target_age"])
+        except ValueError:
+            return jsonify(error="target_age must be an integer"), 400
+
+        image_bytes = file.read()
+
+    # 2) pure JSON + base64
+    elif request.is_json:
+        data = request.get_json()
+        if "image_b64" not in data or "target_age" not in data:
+            return jsonify(error="image_b64 and target_age required"), 400
+
+        try:
+            image_bytes = base64.b64decode(data["image_b64"])
+        except Exception:
+            return jsonify(error="invalid base64 image"), 400
+
+        try:
+            target_age = int(data["target_age"])
+        except ValueError:
+            return jsonify(error="target_age must be an integer"), 400
+
+    else:
+        return jsonify(error="Unsupported content type"), 415
+
+    # now we have image_bytes and target_age
     try:
-        # Get post using existing service
-        post = PostService.get_post(data["post_id"])
-        if not post:
-            return jsonify(error="Post not found"), 404
+        # If you just want to return the raw JPEG bytes:
+        processed_bytes = age_service._call_colab_service(image_bytes, target_age)
+        return Response(processed_bytes, mimetype="image/jpeg")
 
-        # Process image
-        progressed_url = age_service.progress_age(post.image_url, data["target_age"])
+        # Or, if you want to upload back to Firebase and return a URL:
+        # url = age_service.upload_result(processed_bytes, "age_progressed", f"age_{target_age}")
+        # return jsonify(progressed_url=url), 200
 
-        return jsonify(progressed_url=progressed_url), 200
-
-    except ValueError as e:
-        return jsonify(error=str(e)), 404
     except Exception as e:
         return jsonify(error=str(e)), 500
