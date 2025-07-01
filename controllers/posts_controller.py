@@ -208,7 +208,7 @@ def search_for_missing():
 
         for post in all_posts:
             # skip posts that are NOT 'missing'
-            if post.post_type != "missing":
+            if post.post_type != "found":
                 continue
 
             img_url = post.image_url
@@ -228,7 +228,7 @@ def search_for_missing():
             distance = face_service.compare_faces(search_image_bytes, post_image_bytes)
 
             # 3) keep only strong matches (threshold may need tuning)
-            if distance < 4:
+            if distance < 1:
                 matches.append(
                     {
                         "post_id":       post.id,
