@@ -202,9 +202,8 @@ def search_for_missing():
     search_image_bytes = request.files["image_file"].read()
 
     try:
-        # 1) pull every post doc (already sorted newest→oldest)
         all_posts = PostService.get_posts()
-        matches   = []
+        matches = []
 
         for post in all_posts:
             # skip posts that are NOT 'missing'
@@ -220,15 +219,12 @@ def search_for_missing():
                 resp.raise_for_status()
                 post_image_bytes = resp.content
             except Exception as e:
-                # network error or bad URL – skip this post
                 print(f"[search] skip {post.id}: {e}")
                 continue
 
-            # 2) compare query image to post image
             distance = face_service.compare_faces(search_image_bytes, post_image_bytes)
 
-            # 3) keep only strong matches (threshold may need tuning)
-            if distance < 1:
+            if distance < 0.35:
                 matches.append(
                     {
                         "post_id":       post.id,
@@ -237,10 +233,10 @@ def search_for_missing():
                     }
                 )
 
-        # sort by similarity (smallest distance first)
-        sorted_matches = sorted(matches, key=lambda x: x["distance"])
+        # Find the closest match (smallest distance)
+        closest_match = min(matches, key=lambda x: x["distance"]) if matches else None
 
-        return jsonify(matches=sorted_matches), 200
+        return jsonify(closest_match=closest_match), 200
 
     except ValueError as ve:
         return jsonify(error=str(ve)), 400
