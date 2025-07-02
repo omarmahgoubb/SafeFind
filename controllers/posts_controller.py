@@ -115,7 +115,6 @@ def update_post(post_id):
 @posts_bp.route("/posts/<post_id>", methods=["DELETE"])
 @auth_required
 def delete_post(post_id):
-    """Delete post endpoint for regular users - can only delete their own posts"""
     try:
         PostService.delete_post_for_user(post_id, request.uid)
         return jsonify(message="Post deleted"), 200
@@ -127,7 +126,6 @@ def delete_post(post_id):
 @posts_bp.route("/admin/posts/<post_id>", methods=["DELETE"])
 @admin_required
 def admin_delete_post(post_id):
-    """Delete post endpoint for admins - can delete any post"""
     try:
         PostService.delete_post_for_admin(post_id)
         return jsonify(message="Post deleted by admin"), 200
@@ -192,10 +190,6 @@ def report_post(post_id):
 @posts_bp.route("/search", methods=["POST"])
 @auth_required
 def search_for_missing():
-    """
-    Upload a query photo and compare it against all *missing-person* posts.
-    Returns a list of matches sorted by ascending distance.
-    """
     if "image_file" not in request.files:
         return jsonify(error="image_file is required"), 400
 

@@ -16,14 +16,13 @@ class PostService:
     # ───────── private helpers ──────────────────────────
     @staticmethod
     def _gcs_delete(download_url: str) -> None:
-        """Delete a blob given any Firebase or public download URL."""
         bucket = storage.bucket()
         blob_name = None
 
         p = urlparse(download_url)
-        if "/o/" in p.path:                             # v0 / v1 signed URL
+        if "/o/" in p.path:
             blob_name = unquote(p.path.split("/o/")[1])
-        else:                                           # public URL
+        else:
             path = p.path.lstrip("/")
             if path.startswith(bucket.name + "/"):
                 blob_name = path[len(bucket.name) + 1:]
@@ -32,7 +31,7 @@ class PostService:
             try:
                 bucket.blob(blob_name).delete()
             except NotFound:
-                pass  # already gone
+                pass
 
     @staticmethod
     def _upload_image(file_storage, uid: str, post_type: str) -> str:
@@ -87,7 +86,6 @@ class PostService:
 
     @classmethod
     def delete_post_for_admin(cls, post_id: str):
-    # admin: we first read owner uid to satisfy signature
         doc = PostRepository.get_post_by_id(post_id)
         if not doc.exists:
             raise ValueError("Post not found")
@@ -127,7 +125,6 @@ class PostService:
 
     @staticmethod
     def download_image(url: str) -> bytes:
-        """Download image from Firebase Storage URL"""
         from urllib.parse import urlparse, unquote
         import requests
 

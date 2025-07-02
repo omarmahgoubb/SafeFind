@@ -62,7 +62,6 @@ def update_profile():
 @auth_bp.route("/me", methods=["GET"])
 @auth_required
 def get_me():
-    """Return the signed‑in user’s full profile."""
     try:
         user = AuthService.get_user_profile(request.uid)
         return jsonify(user.to_dict()), 200

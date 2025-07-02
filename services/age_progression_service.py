@@ -1,88 +1,106 @@
 import logging
-import requests
 import uuid
-from firebase_admin import storage
-from urllib.parse import urlparse, unquote
+import requests
 from io import BytesIO
+from urllib.parse import urlparse, unquote
 from PIL import Image
+from firebase_admin import storage
+
+from services.face_recognition_service import FaceRecognitionService
+from services.posts_service        import PostService
 
 logger = logging.getLogger("AgeProgressionService")
 
 
 class AgeProgressionService:
     def __init__(self):
-        # hard-coded model-server URL (no need for an env var now)
-        self.colab_service_url = "https://593e-35-230-18-68.ngrok-free.app"
+        self.colab_service_url = "https://cd01-34-124-246-58.ngrok-free.app"
+        self.face_service = FaceRecognitionService()
 
-    def progress_age(self, image_url: str, target_age: int) -> str:
-        """
-        Download a Firebase-hosted image, send it to the aging service,
-        then upload and return the URL of the aged image.
-        """
+    def progress_age_and_search(self, image_input, target_age: int) -> dict:
+
         try:
-            # 1) fetch bytes from Firebase or HTTP
-            img_bytes = self.download_image(image_url)
-            # 2) shrink to a reasonable size
-            processed = self.resize_image(img_bytes, (512, 512))
-            # 3) call the ngrok-exposed aging service
-            result_bytes = self._call_colab_service(processed, target_age)
-            # 4) upload result back to Firebase
-            return self.upload_result(result_bytes, "age_progressed", f"age_{target_age}")
-        except Exception as e:
-            logger.error("Age progression failed", exc_info=True)
-            raise RuntimeError("Age progression processing failed") from e
+            # 1) get original bytes
+            if isinstance(image_input, (bytes, bytearray)):
+                orig_bytes = image_input
+            else:
+                orig_bytes = self._download_image(image_input)
 
-    def download_image(self, url: str) -> bytes:
-        """
-        Try to interpret URL as a Firebase Storage blob; if that fails,
-        fall back to a normal HTTP GET.
-        """
+            # 2) resize for the model
+            proc = self._resize(orig_bytes, (512, 512))
+
+            # 3) call your FastAPI age model
+            aged_bytes = self._call_colab_service(proc, target_age)
+
+            # 4) upload aged image back to Firebase
+            aged_url = self._upload(aged_bytes, "age_progressed", f"age_{target_age}")
+
+            posts = PostService.get_posts()
+            candidates = []
+            for post in posts:
+                if post.post_type != "missing":
+                    continue
+                try:
+                    other = self._download_image(post.image_url)
+                    dist  = self.face_service.compare_faces(aged_bytes, other)
+                except Exception:
+                    continue
+                if dist < FaceRecognitionService.THRESHOLD:
+                    candidates.append({
+                        "post_id":      post.id,
+                        "distance":     dist,
+                        "image_url":    post.image_url,
+                        "post_details": post.to_dict(),
+                    })
+
+            if candidates:
+                best = min(candidates, key=lambda x: x["distance"])
+                return {"aged_image_url": aged_url, "closest_match": best}
+            else:
+                return {"aged_image_url": aged_url, "message": "No match found"}
+
+        except Exception:
+            logger.exception("Age progression + search failed")
+            raise
+
+    def _download_image(self, url: str) -> bytes:
         bucket = storage.bucket()
-        blob_name = None
         p = urlparse(url)
+        blob = None
 
-        # Firebase v1 URL style: /o/<encoded-path>?...
         if "/o/" in p.path:
-            blob_name = unquote(p.path.split("/o/")[1])
+            blob = unquote(p.path.split("/o/")[1])
         else:
-            # older style: /<bucket-name>/<path>
             path = p.path.lstrip("/")
             if path.startswith(bucket.name + "/"):
-                blob_name = path[len(bucket.name) + 1 :]
+                blob = path[len(bucket.name) + 1 :]
 
-        if blob_name:
-            return bucket.blob(blob_name).download_as_bytes()
+        if blob:
+            return bucket.blob(blob).download_as_bytes()
 
-        resp = requests.get(url)
-        resp.raise_for_status()
-        return resp.content
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        return r.content
 
-    def resize_image(self, image_bytes: bytes, size: tuple[int, int]) -> bytes:
-        """Thumbnail the image to `size` while preserving aspect ratio."""
-        img = Image.open(BytesIO(image_bytes)).convert("RGB")
+    def _resize(self, img_bytes: bytes, size: tuple[int,int]) -> bytes:
+        img = Image.open(BytesIO(img_bytes)).convert("RGB")
         img.thumbnail(size, Image.Resampling.LANCZOS)
         buf = BytesIO()
         img.save(buf, format="JPEG")
         return buf.getvalue()
 
-    def upload_result(self, image_bytes: bytes, folder: str, subfolder: str) -> str:
-        """Upload to Firebase and return its public URL."""
+    def _upload(self, img_bytes: bytes, folder: str, subfolder: str) -> str:
         bucket = storage.bucket()
-        path = f"{folder}/{subfolder}/{uuid.uuid4()}.jpg"
-        blob = bucket.blob(path)
-        blob.upload_from_string(image_bytes, content_type="image/jpeg")
+        path   = f"{folder}/{subfolder}/{uuid.uuid4()}.jpg"
+        blob   = bucket.blob(path)
+        blob.upload_from_string(img_bytes, content_type="image/jpeg")
         blob.make_public()
         return blob.public_url
 
-    # expose this as the same name your controller expects:
     def _call_colab_service(self, img_bytes: bytes, target_age: int) -> bytes:
-        return self._call_colab(img_bytes, target_age)
-
-    # the real HTTP-POST against FastAPI
-    def _call_colab(self, img_bytes: bytes, target_age: int) -> bytes:
         files = {"image": ("input.jpg", img_bytes, "image/jpeg")}
-        data = {"target_age": str(target_age)}
-        url = f"{self.colab_service_url}/age-transform"
-        resp = requests.post(url, files=files, data=data, timeout=30)
-        resp.raise_for_status()
-        return resp.content
+        data  = {"target_age": str(target_age)}
+        url   = f"{self.colab_service_url}/age-transform"
+        r     = requests.post(url, files=files, data=data, timeout=30)
+        r.raise_for_status()
+        return r.content

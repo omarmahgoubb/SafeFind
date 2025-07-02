@@ -15,7 +15,6 @@ class ImageUtils:
 
     @staticmethod
     def resize_image(image_bytes: bytes, size: tuple) -> bytes:
-        """Resize image while maintaining aspect ratio"""
         pil_image = ImageUtils.bytes_to_pil(image_bytes)
         pil_image.thumbnail(size, Image.Resampling.LANCZOS)
         return ImageUtils.pil_to_bytes(pil_image)

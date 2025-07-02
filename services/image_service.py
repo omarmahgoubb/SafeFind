@@ -3,12 +3,12 @@ import cv2
 import numpy as np
 import imghdr
 
-# ── tunables ─────────────────────────────────────────────────────────
+# ── enables ─────────────────────────────────────────────────────────
 ALLOWED_TYPES   = {"jpeg", "png"}
-MIN_SIDE        = 320       # px   – reject tiny pictures
-BLUR_VAR_THRES  = 80        # Laplacian variance threshold
-RESIZE_TO       = 1080      # px   – long side after resize
-JPEG_QUALITY    = 90        # %
+MIN_SIDE        = 320
+BLUR_VAR        = 80
+RESIZE_TO       = 1080
+JPEG_QUALITY    = 90
 
 # ── internal helpers ─────────────────────────────────────────────────
 def _reject_small_or_blur(bgr: np.ndarray) -> None:
@@ -18,7 +18,7 @@ def _reject_small_or_blur(bgr: np.ndarray) -> None:
     lap_var = cv2.Laplacian(
         cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY), cv2.CV_64F
     ).var()
-    if lap_var < BLUR_VAR_THRES:
+    if lap_var < BLUR_VAR:
         raise ValueError("Image too blurry")
 
 # ── public API ───────────────────────────────────────────────────────

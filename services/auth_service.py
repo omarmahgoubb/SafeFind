@@ -15,7 +15,6 @@ PHONE_REGEX = re.compile(r"^\+?\d{10,15}$")
 BUCKET_URL_PREFIX = FIREBASE_STORAGE_BUCKET_URL_PREFIX
 
 class AuthService:
-    """Wrapper around Firebase Auth & Firestore with optional avatars."""
 
     # --------------------------- validation ---------------------------
     @staticmethod
