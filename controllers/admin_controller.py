@@ -4,6 +4,8 @@ from services.admin_service import AdminService
 from controllers.auth_decorators import *
 from services.admin_service import AdminService          
 from controllers.auth_decorators import admin_required   
+from services.posts_service import PostService
+from config import db  # or wherever you initialize Firestore
 
 
 
@@ -46,3 +48,33 @@ def delete_post(post_id):
 def user_count():
     total = AdminService.get_user_count()
     return jsonify(total_users=total), 200
+
+# 1.6 get found post count  ─────────────────────
+@admin_bp.route("/posts/found/count", methods=["GET"])
+@admin_required
+def found_post_count():
+    total = PostService.get_found_post_count()
+    return jsonify(total_found_posts=total), 200
+
+# 1.7 get reported post count  ───────────────────
+@admin_bp.route("/posts/reported/count", methods=["GET"])
+@admin_required
+def reported_post_count():
+    total = PostService.get_reported_post_count()
+    return jsonify(total_reported_posts=total), 200
+
+# 1.8 get successful match count  ─────────────────
+@admin_bp.route("/matches/successful/count", methods=["GET"])
+@admin_required
+def successful_matches_count():
+    stats = db.collection("match_stats").where("success", "==", True).stream()
+    count = sum(1 for _ in stats)
+    return jsonify(successful_matches=count), 200
+
+# 1.9 get unsuccessful match count  ────────────────
+@admin_bp.route("/matches/unsuccessful/count", methods=["GET"])
+@admin_required
+def unsuccessful_matches_count():
+    stats = db.collection("match_stats").where("success", "==", False).stream()
+    count = sum(1 for _ in stats)
+    return jsonify(unsuccessful_matches=count), 200

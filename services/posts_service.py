@@ -146,3 +146,13 @@ class PostService:
         response.raise_for_status()
         return response.content
 
+    @classmethod
+    def get_found_post_count(cls) -> int:
+        posts = PostRepository.get_all_posts()
+        return sum(1 for d in posts if (d.to_dict().get("post_type") == "found"))
+
+    @staticmethod
+    def get_reported_post_count() -> int:
+        reports = db.collection("post_reports").stream()
+        return sum(1 for _ in reports)
+

@@ -8,6 +8,7 @@ from services.face_recognition_service import FaceRecognitionService
 import requests
 from schemas.post_schema import MissingPostSchema, FoundPostSchema, UpdatePostSchema
 from pydantic import ValidationError
+from datetime import datetime
 
 face_service = FaceRecognitionService() 
 
@@ -229,6 +230,13 @@ def search_for_missing():
 
         # Find the closest match (smallest distance)
         closest_match = min(matches, key=lambda x: x["distance"]) if matches else None
+
+        # Log match result for admin stats
+        match_stats_ref = db.collection("match_stats")
+        match_stats_ref.add({
+            "timestamp": datetime.now(datetime.timezone.utc),
+            "success": closest_match is not None
+        })
 
         return jsonify(closest_match=closest_match), 200
 
