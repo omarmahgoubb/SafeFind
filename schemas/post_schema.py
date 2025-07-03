@@ -19,7 +19,13 @@ class UpdatePostSchema(BaseModel):
     missing_name: Optional[str] = None
     missing_age: Optional[int] = None
     last_seen: Optional[str] = None
+    found_name: Optional[str] = None
+    estimated_age: Optional[int] = None
+    found_location: Optional[str] = None
     notes: Optional[str] = None
     gender: Optional[str] = None
+
+    class Config:
+        extra = "ignore"
 
 

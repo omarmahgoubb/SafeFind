@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from firebase_admin import firestore
 from controllers.auth_decorators import auth_required, admin_required
 from services.auth_service import AuthService
@@ -87,34 +87,52 @@ def create_found_post():
 @posts_bp.route("/posts/<post_id>", methods=["PATCH"])
 @auth_required
 def update_post(post_id):
+    # 1) collect & validate only the fields you care about
     try:
-        update_fields = UpdatePostSchema(**request.form.to_dict()).dict(exclude_unset=True)
+        update_fields = UpdatePostSchema(**request.form.to_dict()) \
+                            .dict(exclude_unset=True)
     except ValidationError as e:
         return jsonify(e.errors()), 400
 
-    # handle new image if provided
-    image_url = None
+    # debug — log exactly what we’re about to write
+    current_app.logger.debug(f"PATCH /posts/{post_id} → {update_fields}")
+
+    # 2) handle a new image upload if present
     if "image_file" in request.files:
         doc = db.collection("posts").document(post_id).get()
         post_type = doc.get("post_type", "missing") if doc.exists else "missing"
         try:
-            image_url = PostService._upload_image(
+            new_url = PostService._upload_image(
                 request.files["image_file"], request.uid, post_type
             )
-            update_fields["image_url"] = image_url
+            update_fields["image_url"] = new_url
         except Exception as e:
             return jsonify(error=str(e)), 400
 
+    # 3) actually write it
     try:
         PostService.update_post(post_id, request.uid, update_fields)
-        response = {"message": "Post updated"}
-        if image_url:
-            response["image_url"] = image_url
-        return jsonify(response), 200
     except ValueError as ve:
         return jsonify(error=str(ve)), 400
     except Exception as e:
         return jsonify(error=str(e)), 500
+
+    # 4) fetch & return the *new* record so you see the change immediately
+    updated = PostService.get_post(post_id)
+    # build a small JSON-friendly payload
+    result = {
+        "id":             updated.id,
+        "image_url":      updated.image_url,
+        "missing_name":   updated.payload.get("missing_name"),
+        "missing_age":    updated.payload.get("missing_age"),
+        "last_seen":      updated.payload.get("last_seen"),
+        "found_name":     updated.payload.get("found_name"),
+        "estimated_age":  updated.payload.get("estimated_age"),
+        "found_location": updated.payload.get("found_location"),
+        "notes":          updated.payload.get("notes"),
+        "gender":         updated.payload.get("gender"),
+    }
+    return jsonify(message="Post updated", post=result), 200
 
 # ───────── delete post (user) ───────────────────────────────
 @posts_bp.route("/posts/<post_id>", methods=["DELETE"])
