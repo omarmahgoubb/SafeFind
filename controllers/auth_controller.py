@@ -15,12 +15,17 @@ def register():
     except ValidationError as e:
         return jsonify(e.errors()), 400
 
-    valid, msg = AuthService.validate_registration(data.email, data.password, data.phone, data.photo_url)
+    valid, msg = AuthService.validate_registration(
+        data.email, data.password, data.phone, data.photo_url, data.gender
+    )
     if not valid:
         return jsonify(error=msg), 400
 
     try:
-        uid = AuthService.register_user(data.email, data.password, data.first_name, data.last_name, data.phone, data.photo_url)
+        uid = AuthService.register_user(
+            data.email, data.password, data.first_name, data.last_name,
+            data.phone, data.photo_url, data.gender  # Pass gender here
+        )
         return jsonify(message="Registration successful", uid=uid), 201
     except Exception as e:
         return jsonify(error=str(e)), 400

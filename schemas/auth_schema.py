@@ -2,12 +2,13 @@ from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 
 class RegisterSchema(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=8)
+    email: str
+    password: str
     first_name: str
     last_name: str
     phone: str
     photo_url: Optional[str] = None
+    gender: str  # Add this line
 
 class LoginSchema(BaseModel):
     email: EmailStr

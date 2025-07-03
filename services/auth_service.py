@@ -16,7 +16,7 @@ class AuthService:
 
     # --------------------------- validation ---------------------------
     @staticmethod
-    def validate_registration(email: str, password: str, phone: str, photo_url: str = ""):
+    def validate_registration(email: str, password: str, phone: str, photo_url: str = "", gender: str = ""):
         if not EMAIL_REGEX.match(email):
             return False, "Invalid email format"
         if len(password) < 8:
@@ -25,6 +25,8 @@ class AuthService:
             return False, "Invalid phone format"
         if photo_url and not photo_url.startswith(BUCKET_URL_PREFIX):
             return False, "photo_url must come from the project bucket"
+        if gender and gender not in ["male", "female", "other"]:
+            return False, "Invalid gender value"
 
         if UserRepository.get_user_by_email(email):
             return False, "Email already in use"
@@ -37,24 +39,24 @@ class AuthService:
     # ---------------------------- create -----------------------------
     @staticmethod
     def register_user(email: str, password: str, first_name: str, last_name: str,
-                      phone: str, photo_url: str | None = None) -> str:
+                      phone: str, photo_url: str | None = None, gender: str = "") -> str:
         user_record = fb_auth.create_user(
             email=email,
             password=password,
             display_name=f"{first_name} {last_name}",
             photo_url=photo_url or None,
         )
-        user_profile = User(
-            uid=user_record.uid,
-            email=email,
-            first_name=first_name,
-            last_name=last_name,
-            phone=phone,
-            photo_url=photo_url or "",
-            role="user",
-            created_at=firestore.SERVER_TIMESTAMP,
-        )
-        UserRepository.create_user_profile(user_record.uid, user_profile.to_dict())
+        profile_data = {
+            "email": email,
+            "first_name": first_name,
+            "last_name": last_name,
+            "phone": phone,
+            "photo_url": photo_url or "",
+            "gender": gender,  # Add gender here
+            "role": "user",
+            "created_at": firestore.SERVER_TIMESTAMP,
+        }
+        UserRepository.create_user_profile(user_record.uid, profile_data)
         return user_record.uid
 
     # ----------------------------- login -----------------------------

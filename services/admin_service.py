@@ -11,13 +11,21 @@ class AdminService:
     @staticmethod
     def list_users(cursor: str | None):
         page = fb_auth.list_users(page_token=cursor, max_results=100)
-        users = [{
-            "uid": u.uid,
-            "email": u.email,
-            "disabled": u.disabled,
-            "name": u.display_name,
-            "photo": u.photo_url
-        } for u in page.users]
+        users = []
+        for u in page.users:
+            # Fetch user profile from Firestore
+            profile_doc = db.collection("users").document(u.uid).get()
+            gender = ""
+            if profile_doc.exists:
+                gender = profile_doc.to_dict().get("gender", "")
+            users.append({
+                "uid": u.uid,
+                "email": u.email,
+                "disabled": u.disabled,
+                "name": u.display_name,
+                "photo": u.photo_url,
+                "gender": gender
+            })
         return users, page.next_page_token
 
     # 2.2 suspend / unsuspend -----------------------
