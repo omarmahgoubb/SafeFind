@@ -197,12 +197,14 @@ def get_post(post_id):
 @auth_required
 def report_post(post_id):
     reason = (request.get_json() or {}).get("reason", "")
-    db.collection("post_reports").document(post_id).set({
-        "reporter": request.uid,
-        "reason": reason[:200],
+    # now add a new report document (auto-ID) so multiple reports accumulate
+    db.collection("post_reports").add({
+        "post_id":    post_id,
+        "reporter":   request.uid,
+        "reason":     reason[:200],
         "created_at": firestore.SERVER_TIMESTAMP,
     })
-    return jsonify(message="reported"), 201
+    return jsonify(message="report submitted"), 201
 
 # ───────── search for missing ────────────────────────────────
 @posts_bp.route("/search", methods=["POST"])

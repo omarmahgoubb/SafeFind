@@ -29,10 +29,19 @@ class AdminService:
     # 2.3 list reported posts -----------------------
     @staticmethod
     def list_reports(limit=100):
-        docs = (db.collection("post_reports")
-                  .order_by("created_at", direction=Query.DESCENDING)
-                  .limit(limit).stream())
-        return [d.to_dict() | {"doc_id": d.id} for d in docs]
+        docs = (
+            db.collection("post_reports")
+            .order_by("created_at", direction=Query.DESCENDING)
+            .limit(limit)
+            .stream()
+        )
+        out = []
+        for d in docs:
+            rec = d.to_dict()
+            rec["doc_id"] = d.id
+            # rec["post_id"] is already in the document now
+            out.append(rec)
+        return out
 
     # 2.4 delete a post + cascading cleanup --------
     @staticmethod
@@ -41,7 +50,11 @@ class AdminService:
         PostService.delete_post_for_admin(post_id)
 
         # clean up any report doc
-        db.collection("post_reports").document(post_id).delete()
+        reports = db.collection("post_reports") \
+            .where("post_id", "==", post_id) \
+            .stream()
+        for rpt in reports:
+            rpt.reference.delete()
 
     @staticmethod
     def get_user_count() -> int:
