@@ -1,4 +1,4 @@
-import uuid
+import uuid, io
 from urllib.parse import urlparse, unquote
 
 import numpy as np
@@ -9,6 +9,7 @@ from services.image_service import preprocess
 from repositories.post_repository import PostRepository
 from factories.image_uploader_factory import ImageUploaderFactory
 from models.post_model import Post
+
 
 
 class PostService:
@@ -36,6 +37,7 @@ class PostService:
     def _upload_image(file_storage, uid: str, post_type: str) -> str:
         uploader = ImageUploaderFactory.get_uploader(post_type)
         return uploader.upload(file_storage, uid)
+
 
     @classmethod
     def _create_post_base(
@@ -73,28 +75,10 @@ class PostService:
     # ───────── updates & deletes ───────────────────────
     @classmethod
     def update_post(cls, post_id: str, uid: str, update_fields: dict):
-        """
-        Allows updating both top-level fields (e.g. image_url)
-        and nested payload fields (missing_name, notes, gender, etc.)
-        """
         doc = PostRepository.get_post_by_id(post_id)
         if not doc.exists or doc.get("uid") != uid:
             raise ValueError("Post not found or unauthorized")
-
-        # These keys live under payload
-        payload_keys = {
-            "missing_name", "missing_age", "last_seen", "notes",
-            "found_name", "estimated_age", "found_location", "gender"  # ← added
-        }
-
-        to_write = {}
-        for k, v in update_fields.items():
-            if k in payload_keys:
-                to_write[f"payload.{k}"] = v
-            else:
-                to_write[k] = v
-
-        PostRepository.update_post(post_id, to_write)
+        PostRepository.update_post(post_id, update_fields)
 
     @classmethod
     def delete_post_for_user(cls, post_id: str, uid: str):
@@ -105,18 +89,26 @@ class PostService:
         doc = PostRepository.get_post_by_id(post_id)
         if not doc.exists:
             raise ValueError("Post not found")
-        owner_uid = doc.to_dict().get("uid", "")
+
+        # convert the DocumentSnapshot to a dict before reading fields
+        data = doc.to_dict() or {}
+        owner_uid = data.get("uid", "")
+
         cls._delete_post_common(post_id, owner_uid, is_admin=True)
+
 
     @classmethod
     def _delete_post_common(cls, post_id: str, owner_uid: str, is_admin: bool):
         doc = PostRepository.get_post_by_id(post_id)
         if not doc.exists:
             raise ValueError("Post not found")
+
         if not is_admin and doc.get("uid") != owner_uid:
             raise ValueError("Forbidden")
+
         if img_url := doc.get("image_url"):
             cls._gcs_delete(img_url)
+
         PostRepository.delete_post(post_id)
         PostRepository.delete_post_report(post_id)
 
@@ -136,14 +128,23 @@ class PostService:
         from urllib.parse import urlparse, unquote
         import requests
 
+        # Parse URL to extract blob path
         parsed = urlparse(url)
-        if "firebasestorage.googleapis.com" in parsed.netloc and "/o/" in parsed.path:
-            blob_path = unquote(parsed.path.split("/o/")[1].split("?")[0])
-            return storage.bucket().blob(blob_path).download_as_bytes()
+        if "firebasestorage.googleapis.com" in parsed.netloc:
+            # Extract blob path from Firebase URL
+            path_segments = parsed.path.split("/o/")
+            if len(path_segments) > 1:
+                blob_path = unquote(path_segments[1].split("?")[0])
 
-        resp = requests.get(url)
-        resp.raise_for_status()
-        return resp.content
+                # Download from Firebase Storage
+                bucket = storage.bucket()
+                blob = bucket.blob(blob_path)
+                return blob.download_as_bytes()
+
+        # Fallback to regular download
+        response = requests.get(url)
+        response.raise_for_status()
+        return response.content
 
     @classmethod
     def get_found_post_count(cls) -> int:
@@ -154,3 +155,4 @@ class PostService:
     def get_reported_post_count() -> int:
         reports = db.collection("post_reports").stream()
         return sum(1 for _ in reports)
+
