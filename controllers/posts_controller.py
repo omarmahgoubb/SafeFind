@@ -244,6 +244,25 @@ def search_for_missing():
             return jsonify(message="No match found"), 200
 
         closest = min(matches, key=lambda x: x["distance"])
+
+        # Fetch uploader's phone number
+        uploader_id = (
+            closest["post_details"].get("user_id")
+            or closest["post_details"].get("uid")
+            or closest["post_details"].get("author_id")
+        )
+        phone_number = None
+        if uploader_id:
+            try:
+                user_profile_doc = db.collection("users").document(uploader_id).get()
+                if user_profile_doc.exists:
+                    phone_number = user_profile_doc.to_dict().get("phone")
+            except Exception:
+                phone_number = None
+
+        # Add phone number to the response
+        closest["uploader_phone"] = phone_number
+
         # log for admin stats
         db.collection("match_stats").add({
             "timestamp": datetime.utcnow(),

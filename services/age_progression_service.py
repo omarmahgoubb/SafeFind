@@ -55,6 +55,15 @@ class AgeProgressionService:
 
             if candidates:
                 best = min(candidates, key=lambda x: x["distance"])
+                # Add uploader phone number
+                uploader_uid = best["post_details"].get("uid")
+                phone = None
+                if uploader_uid:
+                    from config import db  # Ensure db is imported from your config
+                    user_doc = db.collection("users").document(uploader_uid).get()
+                    if user_doc.exists:
+                        phone = user_doc.to_dict().get("phone")
+                best["uploader_phone"] = phone
                 return {"aged_image_url": aged_url, "closest_match": best}
             else:
                 return {"aged_image_url": aged_url, "message": "No match found"}
