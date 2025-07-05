@@ -1,6 +1,10 @@
 from config import db
 from firebase_admin import firestore
 
+
+# The PostRepository class provides static methods
+# to interact with post data stored in a Firestore database.
+# It acts as a data access layer for post-related operations.
 class PostRepository:
     @staticmethod
     def create_post(post_id: str, data: dict):

@@ -14,6 +14,8 @@ from models.post_model import Post
 
 class PostService:
     # ───────── private helpers ──────────────────────────
+    # This method deletes an image from Google Cloud Storage
+    # given its download URL. It extracts the blob name from the URL
     @staticmethod
     def _gcs_delete(download_url: str) -> None:
         bucket = storage.bucket()

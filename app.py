@@ -5,7 +5,7 @@ from controllers.admin_controller import admin_bp
 from controllers import aging_controller
 
 
-
+# Create and configure the Flask application
 def create_app():
     app = Flask(__name__)
     app.register_blueprint(auth_bp, url_prefix='/api/auth')

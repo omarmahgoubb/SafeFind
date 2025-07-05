@@ -1,6 +1,7 @@
 from datetime import datetime
 
 class Post:
+    # Constructor for the Post class
     def __init__(self, id: str, uid: str, author_name: str, post_type: str, image_url: str, created_at, status: str, payload: dict):
         self.id = id
         self.uid = uid

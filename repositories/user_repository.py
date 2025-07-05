@@ -1,6 +1,10 @@
 from config import db
 from firebase_admin import auth as fb_auth
 
+
+#The UserRepository class provides static methods
+# to interact with user data stored in a Firestore database and Firebase Authentication.
+# It acts as a data access layer for user-related operations.
 class UserRepository:
     @staticmethod
     def get_user_by_email(email: str):

@@ -12,7 +12,7 @@ JPEG_QUALITY    = 90
 
 # ── internal helpers ─────────────────────────────────────────────────
 def _reject_small_or_blur(bgr: np.ndarray) -> None:
-    h, w = bgr.shape[:2]
+    h, w = bgr.shape[:2]            # Get image height and width
     if min(h, w) < MIN_SIDE:
         raise ValueError("Image too small")
     lap_var = cv2.Laplacian(
@@ -23,10 +23,6 @@ def _reject_small_or_blur(bgr: np.ndarray) -> None:
 
 # ── public API ───────────────────────────────────────────────────────
 def preprocess(image_bytes: bytes) -> tuple[bytes, str]:
-    """
-    Validates & normalises an uploaded image.
-    Returns (JPEG bytes, 'jpeg').
-    """
     img_type = imghdr.what(None, image_bytes)
     if img_type not in ALLOWED_TYPES:
         raise ValueError("Only JPEG and PNG images are allowed")
